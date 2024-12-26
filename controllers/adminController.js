@@ -1,158 +1,207 @@
 import jwt from "jsonwebtoken";
-import appointmentModel from "../models/appointmentModel.js";
-import doctorModel from "../models/doctorModel.js";
+import classModel from "../models/classModel.js";
+import teacherModel from "../models/teacherModel.js";
 import bcrypt from "bcrypt";
 import validator from "validator";
 import { v2 as cloudinary } from "cloudinary";
-import userModel from "../models/userModel.js";
 
 // API for admin login
 const loginAdmin = async (req, res) => {
     try {
-
-        const { email, password } = req.body
+        const { email, password } = req.body;
 
         if (email === process.env.ADMIN_EMAIL && password === process.env.ADMIN_PASSWORD) {
-            const token = jwt.sign(email + password, process.env.JWT_SECRET)
-            res.json({ success: true, token })
+            const token = jwt.sign(email + password, process.env.JWT_SECRET);
+            res.json({ success: true, token });
         } else {
-            res.json({ success: false, message: "Invalid credentials" })
+            res.json({ success: false, message: "Invalid credentials" });
+        }
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// API for adding Teacher
+const addTeacher = async (req, res) => {
+    try {
+        const { name, email, password, expert, degree, experience, about, salary, address } = req.body;
+        const imageFile = req.file;
+
+        if (!name || !email || !password || !expert || !degree || !experience || !about || !salary || !address) {
+            return res.json({ success: false, message: "Missing Details" });
         }
 
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
-    }
-
-}
-
-
-// API to get all appointments list
-const appointmentsAdmin = async (req, res) => {
-    try {
-
-        const appointments = await appointmentModel.find({})
-        res.json({ success: true, appointments })
-
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
-    }
-
-}
-
-// API for appointment cancellation
-const appointmentCancel = async (req, res) => {
-    try {
-
-        const { appointmentId } = req.body
-        await appointmentModel.findByIdAndUpdate(appointmentId, { cancelled: true })
-
-        res.json({ success: true, message: 'Appointment Cancelled' })
-
-    } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
-    }
-
-}
-
-// API for adding Doctor
-const addDoctor = async (req, res) => {
-
-    try {
-
-        const { name, email, password, speciality, degree, experience, about, fees, address } = req.body
-        const imageFile = req.file
-
-        // checking for all data to add doctor
-        if (!name || !email || !password || !speciality || !degree || !experience || !about || !fees || !address) {
-            return res.json({ success: false, message: "Missing Details" })
-        }
-
-        // validating email format
         if (!validator.isEmail(email)) {
-            return res.json({ success: false, message: "Please enter a valid email" })
+            return res.json({ success: false, message: "Please enter a valid email" });
         }
 
-        // validating strong password
         if (password.length < 8) {
-            return res.json({ success: false, message: "Please enter a strong password" })
+            return res.json({ success: false, message: "Please enter a strong password" });
         }
 
-        // hashing user password
-        const salt = await bcrypt.genSalt(10); // the more no. round the more time it will take
-        const hashedPassword = await bcrypt.hash(password, salt)
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
 
-        // upload image to cloudinary
-        const imageUpload = await cloudinary.uploader.upload(imageFile.path, { resource_type: "image" })
-        const imageUrl = imageUpload.secure_url
+        const imageUpload = await cloudinary.uploader.upload(imageFile.path, { resource_type: "image" });
+        const imageUrl = imageUpload.secure_url;
 
-        const doctorData = {
+        const teacherData = {
             name,
             email,
             image: imageUrl,
             password: hashedPassword,
-            speciality,
+            expert,
             degree,
             experience,
             about,
-            fees,
+            salary,
             address: JSON.parse(address),
-            date: Date.now()
+            date: Date.now(),
+        };
+
+        const newTeacher = new teacherModel(teacherData);
+        await newTeacher.save();
+        res.json({ success: true, message: "Teacher Added" });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+};
+
+// API to get all teachers list for admin panel
+const allTeachers = async (req, res) => {
+    try {
+        const teachers = await teacherModel.find({}).select("-password");
+        res.json({ success: true, teachers });
+    } catch (error) {
+        console.log(error);
+        res.json({ success: false, message: error.message });
+    }
+};
+const scheduleClass = async (req, res) => {
+    try {
+        console.log("Received request body:", req.body);
+        
+        const { teacherId, slotDate, slotTime, teacherData, selectedClass } = req.body;
+
+        // Validate all required fields
+        if (!teacherId || !slotDate || !slotTime || !teacherData || !selectedClass) {
+            console.log("Missing fields validation failed:", {
+                teacherId: !!teacherId,
+                slotDate: !!slotDate,
+                slotTime: !!slotTime,
+                teacherData: !!teacherData,
+                selectedClass: !!selectedClass
+            });
+            
+            return res.status(400).json({ 
+                message: "All fields are required!",
+                receivedFields: {
+                    teacherId,
+                    slotDate,
+                    slotTime,
+                    teacherData: !!teacherData,
+                    selectedClass
+                }
+            });
         }
 
-        const newDoctor = new doctorModel(doctorData)
-        await newDoctor.save()
-        res.json({ success: true, message: 'Doctor Added' })
+        // Create the class document
+        const classDoc = {
+            teacherId,
+            slotDate,
+            slotTime,
+            teacherData,
+            selectedClass: selectedClass,
+            date: Date.now(),
+        };
 
+        console.log("Attempting to create class with data:", classDoc);
+
+        const newClass = new classModel(classDoc);
+        console.log("Created new class instance:", newClass);
+
+        const savedClass = await newClass.save();
+        console.log("Saved class document:", savedClass);
+
+        res.status(201).json({
+            message: "Class scheduled successfully!",
+            class: savedClass
+        });
     } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        console.error("Error in scheduleClass:", error);
+        res.status(500).json({
+            message: "Failed to schedule class",
+            error: error.toString(),
+            stack: error.stack
+        });
     }
-}
+};
 
-// API to get all doctors list for admin panel
-const allDoctors = async (req, res) => {
+// Add getClasses controller
+const getClasses = async (req, res) => {
     try {
-
-        const doctors = await doctorModel.find({}).select('-password')
-        res.json({ success: true, doctors })
-
+        const classes = await classModel.find().sort({ date: -1 });
+        res.status(200).json({ 
+            success: true, 
+            classes 
+        });
     } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        console.error("Error fetching classes:", error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to fetch classes" 
+        });
     }
-}
+};
 
-// API to get dashboard data for admin panel
-const adminDashboard = async (req, res) => {
+// Controller to get the scheduled classes for admin
+export const getScheduledClasses = async (req, res) => {
     try {
+        const classes = await classModel.find().limit(10); // Fetch first 10 classes
+        res.json({ classes });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Failed to fetch scheduled classes' });
+    }
+};
+// Add cancelClass controller
+const cancelClass = async (req, res) => {
+    try {
+        const { classId } = req.params;
+        
+        const updatedClass = await classModel.findByIdAndUpdate(
+            classId,
+            { cancelled: true },
+            { new: true }
+        );
 
-        const doctors = await doctorModel.find({})
-        const users = await userModel.find({})
-        const appointments = await appointmentModel.find({})
-
-        const dashData = {
-            doctors: doctors.length,
-            appointments: appointments.length,
-            patients: users.length,
-            latestAppointments: appointments.reverse()
+        if (!updatedClass) {
+            return res.status(404).json({ 
+                success: false, 
+                message: "Class not found" 
+            });
         }
 
-        res.json({ success: true, dashData })
-
+        res.status(200).json({ 
+            success: true, 
+            message: "Class cancelled successfully", 
+            class: updatedClass 
+        });
     } catch (error) {
-        console.log(error)
-        res.json({ success: false, message: error.message })
+        console.error("Error cancelling class:", error);
+        res.status(500).json({ 
+            success: false, 
+            message: "Failed to cancel class" 
+        });
     }
-}
+};
 
 export {
     loginAdmin,
-    appointmentsAdmin,
-    appointmentCancel,
-    addDoctor,
-    allDoctors,
-    adminDashboard
-}
+    addTeacher,
+    allTeachers,
+    scheduleClass,
+    getClasses, cancelClass
+};
